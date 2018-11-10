@@ -1,0 +1,5 @@
+{"level":"info","message":"Listening on port 3000...","timestamp":"2018-11-10T13:13:04.409Z"}
+{"level":"info","message":"Listening on port 3000...","timestamp":"2018-11-10T13:14:24.728Z"}
+{"level":"info","message":"Connected to mongodb://localhost/vidly...","timestamp":"2018-11-10T13:14:24.746Z"}
+{"level":"info","message":"Listening on port 3000...","timestamp":"2018-11-10T13:14:51.269Z"}
+{"level":"info","message":"Connected to mongodb://localhost/vidly_tests...","timestamp":"2018-11-10T13:14:51.290Z"}
