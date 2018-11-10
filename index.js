@@ -9,7 +9,9 @@ require('./startup/config')();
 require('./startup/validation')();
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => winston.info(`Listening on port ${port}...`));
+const server = app.listen(port, () => winston.info(`Listening on port ${port}...`));
+
+module.exports = server;
 
 // --------- Throw an exception for demo
 // throw new Error('Something failed during startup.');
