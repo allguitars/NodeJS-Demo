@@ -222,7 +222,7 @@ describe('/api/genres', () => {
 });
 ```
 
-Now. let's add all another integration test for the following endpoint:
+Now. let's add another integration test for the following endpoint:
 
 _genres.js_
 ```js
@@ -235,10 +235,6 @@ router.get('/:id', async (req, res) => {
   res.send(genre);
 });
 ```
-
-
-
-
 
 _gernes.test.js_
 ```js
@@ -372,7 +368,7 @@ If we run this test, it's going to fail. Let's see why.
 
 Here is the reason. We expected _\_id_ to be an **object id**, but we receive a **string**. This is one of the issues we have when writing integration tests for mongoose models. When we store this genre in the database, mongoose assigns the id property, and sets it to an object id, but when you read this object from the database the id will be a string. 
 
-So, we can rewrite this last expectation to something like this. 
+So, we can rewrite this last expectation to something like this:
 ```js
   expect(res.body).toHaveProperty('name', genre.name);
 ```
@@ -419,12 +415,75 @@ describe('/api/genres', () => {
   });
 });
 ```
+Now let's deal with the second path of the same endpoint, which is when an invalid ID is passed.
 
+In this test we don't really need to add a genre in the database, we can start with an empty collection because when we pass an invalid genre id, it doesn't really matter if you have no genres or 50 genres in the database.
 
+Let's delete the following two lines for two reasons:
+One to make this test faster, and also, to make it cleaner and more maintainable.
+```js
+// deleted
+  const genre = new Genre({ name: 'genre1' });
+  await genre.save();
+```
+Instead of genre._id, we're going to pass 1 as an invalid genre id,and then we expect the status to be 404. we could also check the message in the body of the response, but it doesn't really matter as much. Let's just focus on 404.
+```js
+  it('should return 404 if invalid id is passed', async () => {
+    const res = await request(server).get('/api/genres/1');
+    expect(res.status).toBe(404);
+  });
+```
+Result:
+```shell
+    Expected: 404
+    Received: 500
 
+      39 |     it('should return 404 if invalid id is passed', async () => {
+      40 |       const res = await request(server).get('/api/genres/1');
+    > 41 |       expect(res.status).toBe(404);
+         |                          ^
+      42 |     });
+      43 |   });
+      44 | });
+```
+we expected 404 but we got a 500 or internal server error. What's going on here? Well, let's scroll up, here we have an error that is coming from winston.
+```shell
+error: Cast to ObjectId failed for value "1" at path "_id" for model "Genre" CastError: Cast to ObjectId failed for value "1" at path "_id" for model "Genre"
+```
+Earlier we defined the following error middleware function, and inside this function, first we log the error using winston and then return the 500 error to the client. So this error that we have here is coming from winston.
 
+_errer.js_
+```js
+module.exports = function(err, req, res, next) {
+  winston.error(err.message, err);
 
+  res.status(500).send('Something failed.');
+};
+```
+We have seen this issue before. Earlier we fixed this problem if we had the id in the body of the request so we installed a **joi** plugin for validating object id's, but that approach doesn't work if id is a route parameter. 
 
+So back in our route handler in _genres.js_, before calling _Genre.findById()_ we have to make sure that request.params.id is a valid object id; otherwise this route handler does not respond with 404.
+```js
+router.get('/:id', async (req, res) => {
+  // -------------------- added ------------------------
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(404).send('Invalid ID');
+  // ---------------------------------------------------
+  
+  const genre = await Genre.findById(req.params.id);
 
+  if (!genre)
+    return res.status(404).send('The genre with given id was not found!');
 
+  res.send(genre);
+});
+```
+Now all tests can pass. Beautiful!
+
+However, throughout the application, we have quite a few endpoints to get a single resource, and we have to repeat this logic in all those endpoints.
+```js
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(404).send('Invalid ID');
+```
+So, next we're going to refactor this code and move this logic into a middleware function.
 
