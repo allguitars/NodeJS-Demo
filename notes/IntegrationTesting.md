@@ -19,7 +19,7 @@ The **verbose** flag helps you troubleshoot problems when something goes wrong. 
 
 There is some conflict with winston-mongodb.
 
-_logging.js_
+Comment out the winston-mongodb part in _logging.js_
 ```js
 // require('winston-mongodb');
 
@@ -222,10 +222,203 @@ describe('/api/genres', () => {
 });
 ```
 
+Now. let's add all another integration test for the following endpoint:
+
+_genres.js_
+```js
+router.get('/:id', async (req, res) => {
+  const genre = await Genre.findById(req.params.id);
+
+  if (!genre)
+    return res.status(404).send('The genre with given id was not found!');
+
+  res.send(genre);
+});
+```
 
 
 
 
+
+_gernes.test.js_
+```js
+  describe('GET /:id', () => {
+    it('should return a genre if valid id is passed', async () => {
+      const genre = new Genre({ name: 'genre1' });
+      await genre.save();
+
+      const res = await request(server).get('/api/genres/' + genre._id);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject(genre);
+    });
+  });
+```
+If we run this test, it's going to fail. Let's see why.
+```shell
+    Expected value to match object:
+      {"__v": 0, "_id": "5be7d2ef5ddbf148b5554a1e", "name": "genre1"}
+    Received:
+      {"__v": 0, "_id": "5be7d2ef5ddbf148b5554a1e", "name": "genre1"}
+    Difference:
+    Compared values serialize to the same structure.
+    Printing internal object structure without calling `toJSON` instead.
+
+    - Expected
+    + Received
+
+    - model {
+    -   "$__": InternalCache {
+    -     "$options": Object {},
+    -     "_id": ObjectID {
+    -       "_bsontype": "ObjectID",
+    -       "id": Buffer [
+    -         91,
+    -         231,
+    -         210,
+    -         239,
+    -         93,
+    -         219,
+    -         241,
+    -         72,
+    -         181,
+    -         85,
+    -         74,
+    -         30,
+    -       ],
+    -     },
+    -     "activePaths": StateMachine {
+    -       "map": [Function anonymous],
+    -       "paths": Object {
+    -         "name": "require",
+    -       },
+    -       "stateNames": Array [
+    -         "require",
+    -         "modify",
+    -         "init",
+    -         "default",
+    -         "ignore",
+    -       ],
+    -       "states": Object {
+    -         "default": Object {},
+    -         "ignore": Object {},
+    -         "init": Object {},
+    -         "modify": Object {},
+    -         "require": Object {
+    -           "name": true,
+    -         },
+    -       },
+    -     },
+    -     "adhocPaths": undefined,
+    -     "emitter": EventEmitter {
+    -       "_events": Object {},
+    -       "_eventsCount": 0,
+    -       "_maxListeners": 0,
+    -       "domain": null,
+    -     },
+    -     "fullPath": undefined,
+    -     "getters": Object {},
+    -     "inserting": true,
+    -     "ownerDocument": undefined,
+    -     "pathsToScopes": Object {},
+    -     "populate": undefined,
+    -     "populated": undefined,
+    -     "removing": undefined,
+    -     "saveError": undefined,
+    -     "scope": undefined,
+    -     "selected": undefined,
+    -     "session": null,
+    -     "shardval": undefined,
+    -     "strictMode": true,
+    -     "validationError": undefined,
+    -     "version": undefined,
+    -     "wasPopulated": false,
+    -   },
+    -   "_doc": Object {
+    + Object {
+        "__v": 0,
+    -     "_id": ObjectID {
+    -       "_bsontype": "ObjectID",
+    -       "id": Buffer [
+    -         91,
+    -         231,
+    -         210,
+    -         239,
+    -         93,
+    -         219,
+    -         241,
+    -         72,
+    -         181,
+    -         85,
+    -         74,
+    -         30,
+    -       ],
+    -     },
+    +   "_id": "5be7d2ef5ddbf148b5554a1e",
+        "name": "genre1",
+    -   },
+    -   "errors": undefined,
+    -   "isNew": false,
+      }
+
+      34 |       const res = await request(server).get('/api/genres/' + genre._id);
+      35 |       expect(res.status).toBe(200);
+    > 36 |       expect(res.body).toMatchObject(genre);
+         |                        ^
+      37 |     });
+      38 |   });
+      39 | });
+```
+
+
+Here is the reason. We expected _\_id_ to be an **object id**, but we receive a **string**. This is one of the issues we have when writing integration tests for mongoose models. When we store this genre in the database, mongoose assigns the id property, and sets it to an object id, but when you read this object from the database the id will be a string. 
+
+So, we can rewrite this last expectation to something like this. 
+```js
+  expect(res.body).toHaveProperty('name', genre.name);
+```
+
+The _gernes.test.js_ so far:
+```js
+const request = require('supertest');
+const { Genre } = require('../../models/genre');
+
+let server;
+
+describe('/api/genres', () => {
+  beforeEach(() => { server = require('../../index'); });
+  afterEach(async () => {
+    server.close();
+    await Genre.remove({});
+  });
+
+  describe('GET /', () => {
+    it('should return all genres', async () => {
+      Genre.collection.insertMany([
+        { name: 'genre1' },
+        { name: 'genre2' }
+      ]);
+
+      const res = await request(server).get('/api/genres');
+
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(2);
+      expect(res.body.some(g => g.name === 'genre1')).toBeTruthy();
+      expect(res.body.some(g => g.name === 'genre2')).toBeTruthy();
+    });
+  });
+
+  describe('GET /:id', () => {
+    it('should return a genre if valid id is passed', async () => {
+      const genre = new Genre({ name: 'genre1' });
+      await genre.save();
+
+      const res = await request(server).get('/api/genres/' + genre._id);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('name', genre.name);
+    });
+  });
+});
+```
 
 
 
