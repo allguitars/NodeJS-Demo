@@ -547,7 +547,7 @@ So, with automated tests, we can **refactor our code with confidence.**
 
 ## Testing the Authorization
 
-Ｗe're going to test the route handler for creating a new genre. So how many tests do we need here?
+Ｗe're going to test the route handler for creating a new genre. So how many tests do we need here?
 
 **The number of tests should be greater than or equal to the number of execution paths.**
 
