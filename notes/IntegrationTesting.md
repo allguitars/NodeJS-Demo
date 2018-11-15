@@ -4,7 +4,7 @@ In real-world applicaiton, we need to work with one or more external resources, 
 
 To write integration tests, we need a real database. We (1) populate this database with data for testing. Now (2) we send an http request to an endpoint we want to (3) test and then make an assertion. That assertion may involve inspecting the result or the database.
 
-For example, if this is an http post request you create a new genre, in an integration test, we're going to look at our database and verify that this new genre is there.
+For example, if there is an http post request to create a new genre, in an integration test, we're going to look at our database and verify that this new genre is there in the database.
 
 ## Prepare for Integration Tests
 - Add one more flag in _package.json_
@@ -87,7 +87,7 @@ info: Listening on port 3000...
 info: Connected to mongodb://localhost/vidly_tests...
 ```
 
-## First Iplementation
+## First Implementation
 
 To write integration tests for **Express** applications, we need to install a library called **supertest**, with which we can send http requests to our endpoint, just like how we manually test our application using **Postman**. Because this is only for testing, we're going to save this as only a **development dependency**.
 
@@ -171,6 +171,8 @@ If we come back here to the test file and make a simple change like adding a com
 ```
 We expected value to be 2, but received 4, which means we expected two genres but we have 4 genres. With this implementation every time this test is executed, we add two new genres to our database, so as a best practice, whenever we change the state of our database, we should clean up after.
 
+### Make the Test Repeatable
+
 So, after we do our assertions, this is where we call _Genre.remove({})_, passing in an empty object as a query object, and this will remove all documents in Genre collection. It returns a Promise so we need to await it
 ```js
 await Genre.remove({});
@@ -221,7 +223,7 @@ describe('/api/genres', () => {
   });
 });
 ```
-### Endpoint with an Parameter
+### Endpoint with a Parameter
 
 Now. let's add another integration test for the following endpoint:
 
@@ -376,7 +378,7 @@ So, we can rewrite this last expectation to something like this:
   expect(res.body).toHaveProperty('name', genre.name);
 ```
 
-The _gernes.test.js_ so far:
+The _genres.test.js_ so far:
 ```js
 const request = require('supertest');
 const { Genre } = require('../../models/genre');
@@ -502,4 +504,279 @@ However, throughout the application, we have quite a few endpoints to get a sing
     return res.status(404).send('Invalid ID');
 ```
 So, next we're going to refactor this code and move this logic into a middleware function.
+
+## Create a Middleware Function to Catch the Invalid ID
+
+Now, we want to move this logic into a middleware function so we can reuse it in multiple places.
+
+Under _middleware_ folder, create a new file _validateObjectId.js_
+
+```js
+const mongoose = require('mongoose');
+
+// Inside this function. So, if this parameter is not a valid object id we're going to return the 404 error; otherwise, we'll pass control to the next middleware function, which is in this case our route handler.
+module.exports = function (req, res, next) {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(404).send('Invalid ID');
+
+  // If the id is valid, pass to the next middleware, the route handler
+  next();
+}
+
+```
+
+In _genres.js_, we need to import this new middleware function.
+```js
+const validateObjectId = require('../middleware/validateObjectId');
+
+...
+
+// Apply this middleware function into the route hadler
+router.get('/:id', validateObjectId, async (req, res) => {
+  const genre = await Genre.findById(req.params.id);
+
+  if (!genre)
+    return res.status(404).send('The genre with given id was not found!');
+
+  res.send(genre);
+});
+
+```
+
+So, with automated tests, we can **refactor our code with confidence.**
+
+## Testing the Authorization
+
+Ｗe're going to test the route handler for creating a new genre. So how many tests do we need here?
+
+**The number of tests should be greater than or equal to the number of execution paths.**
+
+So here we have one execution path: if the genre is invalid, we're going to return a 400 error:
+```js
+  const { error } = validate(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+```
+
+And here's the other execution path:
+```js
+  const genre = new Genre({ name: req.body.name });
+  await genre.save();
+  
+  res.send(genre);
+
+```
+However for this execution path we need two tests:
+- first we want to make sure that this genre is saved in the database so we're going to query the database and ensure that the genre that we sent is in there.
+- In the other test, we want to make sure that genre is in the body of the **response**.
+
+Also, note that here we have the authorization middleware:
+```js
+router.post('/', auth, async (req, res) => {
+  ...
+});
+```
+So, we need another test to make sure if the user is not logged in, we're going to return a 401 error which means **unauthorized**.
+
+Now, let's add another test suite in _genres.test.js_
+```js
+  describe('POST /', () => {
+    it('should return 401 if the client is not logged in', async () => {
+      const res = await request(server)
+        .post('/api/genres')
+        .send({ name: 'genre1' });
+
+      expect(res.status).toBe(401);
+    });
+  });
+```
+
+## Testing Invalid Inputs
+
+Now let's assume the user or the client is logged in, but is sending an invalid genre so this time, we should return 400, which means bad request, if genre is invalid. But what makes genre invalid? -> we want to make sure that it's at least 5 characters. 
+
+To implement this test, first we need to log in so we need to generate an **authentication token** and then we need to include that token in the header of the request.
+
+_genres.test.js_
+```js
+// On the top, first we need to import our user model because earlier, we added a method to this class to generate an authentication token.
+const { User } = require('../../models/user'); // Import User class from the user module
+
+...
+
+  describe('POST /', () => {
+
+    ...
+
+    it('should return 400 if genre is less than 5 characters.', async () => {
+      // Before sending the request, we're going to create a token
+      const token = User().generateAuthToken();
+
+      const res = await request(server)
+        .post('/api/genres')
+        // The Name of the header is x-auth-token. This is the key that our authorization middleware looks for.
+        .set('x-auth-token', token)
+        .send({ name: '1234' }); // less than 5 chars
+
+      expect(res.status).toBe(400);
+    });
+  });
+
+```
+
+Now by the same token, we should not be able to send a genre that is more than 50 characters. So, let's write another test for that. We can hard code a long string here, but that's ugly. Let me show you how to dynamically generate a long string. 
+
+In the terminal window, let's just run **node**. Here we can execute JavaScript code. I'm going to new up an array of 5 elements and then join these elements using 'a'.
+
+```shell
+> new Array(5).join('a')
+'aaaa'
+>
+```
+We get 4 a's. Because we have 5 elements in this array, we'll put 'a' in between each element, and that's why we get 4 a's. The length of the string we have here equals the number of elements in the array minus 1. In other words, if we want a string that is, let's say, 51 characters, we should have an array of 52 elements because our separater will be between these elements.
+
+```js
+  describe('POST /', () => {
+
+    ...
+
+    it('should return 400 if genre is more than 50 characters.', async () => {
+      const token = User().generateAuthToken();
+
+      const longName = new Array(52).join('a'); // 51 a's
+
+      const res = await request(server)
+        .post('/api/genres')
+        .set('x-auth-token', token)
+        .send({ name: longName });
+
+      expect(res.status).toBe(400);
+    });
+  });
+```
+
+Execute it, then we have the following error:
+
+```shell
+error: Genre validation failed: name: Path `name` (`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`) is longer than the maximum allowed length (50). ValidationError: name: Path `name` (`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`) is longer than the maximum allowed length (50).
+    at new ValidationError (/Users/yihsiulee/GoogleDrive/ExerciseFiles/NodeJS/Udemy/Node-js-The-Complete-Guide-to-Build-RESTful-APIs/movie-project/node_modules/mongoose/lib/error/validation.js:27:11)
+    at model.Object.<anonymous>.Document.invalidate (/Users/yihsiulee/GoogleDrive/ExerciseFiles/NodeJS/Udemy/Node-js-The-Complete-Guide-to-Build-RESTful-APIs/movie-project/node_modules/mongoose/lib/document.js:1832:32)
+    at p.doValidate.skipSchemaValidators (/Users/yihsiulee/GoogleDrive/ExerciseFiles/NodeJS/Udemy/No FAIL  tests/integration/genres.test.jsul-APIs/movie-project/node_modules/mongoose/lib/document.js:1  /api/genres
+    GET /
+      ✓ should return all genres (604ms)
+    GET /:id
+      ✓ should return a genre if valid id is passed (17ms)
+      ✓ should return 404 if invalid id is passed (4ms)
+    POST /
+      ✓ should return 401 if the client is not logged in (22ms)
+      ✓ should return 400 if genre is less than 5 characters. (12ms)
+      ✕ should return 400 if genre is more than 50 characters. (12ms)
+
+  ● /api/genres › POST / › should return 400 if genre is more than 50 characters.
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 400
+    Received: 500
+
+      74 |         .send({ name: longName });
+      75 |
+    > 76 |       expect(res.status).toBe(400);
+         |                          ^
+      77 |     });
+      78 |   });
+      79 | });
+```
+
+We expect the 400, but we got 500. You scroll up and you can see we get this error is coming from **mongoose**, validation error failed so we didn't implement our _joi_ validation function properly.
+
+Back in _genre.js_, We added minimum characters, but we forgot maximum characters. 
+```js
+function validateGenre(body) {
+    const schema = {
+        name: Joi.string().min(5).max(50).required(), // adding max(50)
+    };
+    return Joi.validate(body, schema);
+}
+
+```
+
+Back in the terminal, all tests are passing.
+
+## Testing the Happy Paths
+
+So now we know, for the following execution path, you had to write two tests because there are various possibilities that the input can be invalid. That's why we discussed earlier that the number of tests for a function is greater than or equal to the number of execution paths.
+
+_genres.js_
+```js
+router.post('/', auth, async (req, res) => {
+  const { error } = validate(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+
+  ...
+});
+```
+
+Now, let's work on the happy path.
+
+_genres.js_
+```js
+router.post('/', auth, async (req, res) => {
+
+  ...
+
+  // Happy paths
+  const genre = new Genre({ name: req.body.name });
+  await genre.save();
+  res.send(genre);
+});
+```
+
+First, we want to test that this genre is saved in the database.
+
+_genres.test.js_
+```js
+  describe('POST /', () => {
+ 
+    ...
+
+    it('should save the genre if it is valid', async () => {
+      const token = User().generateAuthToken();
+
+      const res = await request(server)
+        .post('/api/genres')
+        .set('x-auth-token', token)
+        .send({ name: 'genre1' });
+
+      // Use our genre model to query the database
+      const genre = await Genre.find({ name: 'genre1' });
+      expect(genre).not.toBeNull(); // Matcher function
+    });
+  });
+  
+```
+
+Now the last test! We want to make sure that this genre is in the body of the response. In this test, we don't need to query the database. We simply look at response.body. We want to make sure that here we have an _\_id_ property,
+
+_genres.test.js_
+```js
+  describe('POST /', () => {
+ 
+    ...
+
+    it('should return the genre if it is valid', async () => {
+      const token = User().generateAuthToken();
+
+      const res = await request(server)
+        .post('/api/genres')
+        .set('x-auth-token', token)
+        .send({ name: 'genre1' });
+
+      expect(res.body).toHaveProperty('_id'); // Don't care the value.
+      expect(res.body).toHaveProperty('name', 'genre1');
+    });
+  });
+  
+```
+
+## Writing Clean Tests
 
