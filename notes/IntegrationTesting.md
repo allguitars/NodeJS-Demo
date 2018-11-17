@@ -780,3 +780,264 @@ _genres.test.js_
 
 ## Writing Clean Tests
 
+In all these tests, we have a fair amount of duplication. Except the first one in every test, we're generating an authentication token. Also, the request that we are sending to the server looks very repetitive in each test. There is only a small variation. For example, we may want to set the name to a short string, or to a long string, or we want to remove the authorization token, but the rest of the body of this request, the general template, the general structure remains the same.
+
+To make all these tests clean, **We define the happy path, and then in each test, we change one parameter that clearly aligns with the name of the test.**
+
+### Examine the Happy Paths
+
+Let's look at the happy paths:
+```js
+  describe('POST /', () => {
+ 
+    ...
+
+    // Happy path 1
+    it('should save the genre if it is valid', async () => {
+      // repetitive
+      const token = User().generateAuthToken();
+
+      // repetitive
+      const res = await request(server)
+        .post('/api/genres')
+        .set('x-auth-token', token)
+        .send({ name: 'genre1' });
+
+      const genre = await Genre.find({ name: 'genre1' });
+      expect(genre).not.toBeNull(); // Matcher function
+    });
+
+    // Happy path 2
+    it('should return the genre if it is valid', async () => {
+      // repetitive
+      const token = User().generateAuthToken();
+
+      // repetitive
+      const res = await request(server)
+        .post('/api/genres')
+        .set('x-auth-token', token)
+        .send({ name: 'genre1' });
+
+      expect(res.body).toHaveProperty('_id'); // Don't care the value.
+      expect(res.body).toHaveProperty('name', 'genre1');
+    });
+  });
+
+...
+
+```
+
+### Extract the Repetitive Code in the Happy Paths
+
+So, on top of this testcsuite, we are going to define a function. Let's call this _exec_., meaning we are executing this request. This function includes the repetitive request code.
+
+Here we want to return the response so let's return it immediately and also because we're using **await** we should add **async**.
+```js
+  describe('POST /', () => {
+
+    // The code for the happy path
+    const exec = async () => {
+      return await request(server)
+        .post('/api/genres')
+        .set('x-auth-token', token)
+        .send({ name }); // ES6 format - equals to .send({ name: name })
+    }
+
+  ...
+
+```
+
+### Deal with Happy Path One
+
+We can simply call the _exec()_ function, await it, and get the response. But in this test in particular, we are not working with this _res_ so we can delete it. 
+
+```js
+    it('should save the genre if it is valid', async () => {
+      const token = User().generateAuthToken();
+
+      // We don't need to get the res because we are not using it here
+      await exec();
+
+      const genre = await Genre.find({ name: 'genre1' });
+      expect(genre).not.toBeNull(); // Matcher function
+    });
+```
+
+### Deal with the Path Where the User Is Not Logged In
+
+Compare the code for sending request and our _exec()_ function. 
+```js
+    it('should return 401 if the client is not logged in', async () => {
+      const res = await request(server)
+        .post('/api/genres')
+        .send({ name: 'genre1' });
+
+      expect(res.status).toBe(401);
+    });
+```
+
+The only difference is where we set the authorization token. So technically, we can replace these few lines with a call to our _exec()_ function, await it, and get the response. But before calling this, we need to get rid of this token.
+
+We define this token in this block, making it a global variable for this test suite.
+
+```js
+  describe('POST /', () => {
+
+    let token;
+    
+    ...
+
+```
+
+In order to test the scenario where the client is not logged in, we want to explicitly set the token to an empty string so in this test, we don't have a token.
+
+```js
+  describe('POST /', () => {
+
+    let token;
+
+    it('should return 401 if the client is not logged in', async () => {
+      token = '';
+
+      const res = await exec();
+
+      expect(res.status).toBe(401);
+    });
+    
+    ...
+
+```
+
+### Deal with the Other Test Cases
+
+However, in other tests, we do have a token so we should set this token to a valid Json Web Token before each test. If you look at the other tests, the first line of every test has this line:
+```js
+const token = User().generateAuthToken();
+```
+This is repetitive so we can extract this and put it in the _beforeEach()_ function for this test suite. Let's define beforeEach(). We give it an anonymous  function and inside we simply set the token.
+
+```js
+  describe('POST /', () => {
+
+    let token;
+
+    const exec = async () => {
+      return await request(server)
+        .post('/api/genres')
+        .set('x-auth-token', token)
+        .send({ name }); // ES6 format - equals to .send({ name: name })
+    }
+
+    // Now make sure to remove this constant keyword, otherwise here you will define a token with a different scope, but we are working with a token that is defined at the test suite level.
+    beforeEach(() => {
+      token = User().generateAuthToken();
+    });
+
+    ...
+
+```
+Now, before each test, you're initializing the token to a valid json web token. 
+
+### Align Clearly with the Description of the Test
+
+Test Case:
+```js
+  it('should return 400 if genre is less than 5 characters.', async () => {
+    const res = await request(server)
+      .post('/api/genres')
+      .set('x-auth-token', token)
+      .send({ name: '1234' });
+
+    expect(res.status).toBe(400);
+  });
+
+```
+Again, we replace these few lines for making the request with a call to our _exec()_ function, await it, and get the response, _res_.
+
+```js
+  it('should return 400 if genre is less than 5 characters.', async () => {  
+    
+    const res = await exec();
+
+    expect(res.status).toBe(400);
+  });
+```
+
+Now what is this scenario we're testing? -> "genre less than 5 characters". So similar to the token, we can define genre as **a variable in this test suite**. And then we change this variable in each test.
+
+Let's also add the _name_ of the genre at the top of this test suite. Now here in our exec()_ function, we have hard-coded this genre:
+```js
+    const res = await request(server)
+      ...
+
+      .send({ name: '1234' });
+```
+
+We should get rid of this and set the name of the genre in each test explicitly. So, here we are going to change this to _name_:
+```js
+      .send({ name: name });
+```
+
+Or in ES6, we can make this code shorter so **if the key and value are the same, we can just add the key**.
+```js
+      .send({ name });
+```
+
+Now in _beforeEach()_, we want to set the values for the **happy path**:
+```js
+    beforeEach(() => {
+      token = User().generateAuthToken();
+      name = 'genre1';
+    });
+```
+
+Now back to our test, in this test, we want a genre that is less than 5 characters so we set the name to '1234'.
+```js
+    it('should return 400 if genre is less than 5 characters', async () => {
+      // This line clearly aligns with the test description - less than 5 chars
+      name = '1234';
+
+      const res = await exec();
+
+      expect(res.status).toBe(400);
+    });
+```
+
+This time we want to test "if genre is more than 50 characters". Here, we're setting the name but removing the constant, otherwise this will be a different constant with a different scope.
+
+```js
+    it('should return 400 if genre is more than 50 characters', async () => {
+      // Clearly aligns with the test description - more than 50 chars
+      name = new Array(52).join('a');
+
+      const res = await exec();
+
+      expect(res.status).toBe(400);
+    });
+```
+
+### Modify the Rest of the Happy Paths
+
+We don't need to set the token. Also, we replace the code for the request with a call to our _exec()_ function.
+
+```js
+    // Happy path 1
+    it('should save the genre if it is valid', async () => {
+      await exec();
+
+      const genre = await Genre.find({ name: 'genre1' });
+      expect(genre).not.toBeNull();
+    });
+
+    // Happy path 2
+    it('should return the genre if it is valid', async () => {
+      const res = await exec();
+
+      expect(res.body).toHaveProperty('_id');
+      expect(res.body).toHaveProperty('name', 'genre1');
+    });
+```
+
+
+
+
