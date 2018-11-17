@@ -592,7 +592,7 @@ Now, let's add another test suite in _genres.test.js_
 
 ## Testing Invalid Inputs
 
-Now let's assume the user or the client is logged in, but is sending an invalid genre so this time, we should return 400, which means bad request, if genre is invalid. But what makes genre invalid? -> we want to make sure that it's at least 5 characters. 
+Now let's assume the user or the client is logged in, but is sending an invalid genre so this time, we should return 400, which means bad request, if genre is invalid. But what makes genre invalid? -> we want to make sure that it's at least 5 characters. 
 
 To implement this test, first we need to log in so we need to generate an **authentication token** and then we need to include that token in the header of the request.
 
@@ -1038,6 +1038,6 @@ We don't need to set the token. Also, we replace the code for the request with a
     });
 ```
 
-
+## Testing the Auth Middleware
 
 
