@@ -25,7 +25,7 @@
   - [Align Clearly with the Description of the Test](#Align-Clearly-with-the-Description-of-the-Test)
   - [Modify the Rest of the Happy Paths](#Modify-the-Rest-of-the-Happy-Paths)
 - [Testing the Auth Middleware](#Testing-the-Auth-Middleware)
-  - [Token: Empty String v.s. Null](#Token:-Empty-String-v.s.-Null)
+  - [Token: Empty String vs Null](#Token:-Empty-String-vs-Null)
   - [Unit Testing the Auth Middleware](#Unit-Testing-the-Auth-Middleware)
   - [Mock the header() Method](#Mock-the-header()-Method)
   -[Mock the _next()_ Function and _res_ Object](#Mock-the-_next()_-Function-and-_res_-Object)
@@ -1163,7 +1163,7 @@ describe('auth middleware', () => {
   });
 ```
 
-### Token: Empty String v.s. Null
+### Token: Empty String vs Null
 
 Now what if we set token to null?
 ```js
