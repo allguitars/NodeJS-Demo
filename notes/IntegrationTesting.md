@@ -1,5 +1,37 @@
 # Integration Testing
 
+## Content
+- [Inroduction](#Introduction)
+- [Prepare for Integration Tests](#Prepare-for-Integration-Tests)
+- [Setting Up the Test Database](#Setting-Up-the-Test-Database)
+- [First Implementation](#First-Implementation)
+- [Populating the Test DB](#Populating-the-Test-DB)
+  - [Make the Test Repeatable](#Make-the-Test-Repeatable)
+  - [Endpoint with a Parameter](#Endpoint-with-a-Parameter)
+  - [Object ID Problem](#Object-ID-Problem)
+  - [Deal with the Second Path](#Deal-with-the-Second-Path)
+  - [Middleware Problem](#Middleware-Problem)
+  - [Fix the Middleware Problem](#Fix-the-Middleware-Problem)
+- [Create a Middleware Function to Catch the Invalid ID](#Create-a-Middleware-Function-to-Catch-the-Invalid-ID)
+- [Testing the Authorization](#Testing-the-Authorization)
+- [Testing Invalid Inputs](#Testing-Invalid-Inputs)
+- [Testing the Happy Paths](#Testing-the-Happy-Paths)
+- [Writing Clean Tests](#Writing-Clean-Tests)
+  - [Examine the Happy Paths](#Examine-the-Happy-Paths)
+  - [Extract the Repetitive Code in the Happy Paths](#Extract-the-Repetitive-Code-in-the-Happy-Paths)
+  - [Deal with Happy Path One](#Deal-with-Happy-Path-One)
+  - [Deal with the Path Where the User Is Not Logged In](#Deal-with-the-Path-Where-the-User-Is-Not-Logged-In)
+  - [Deal with the Other Test Cases](#Deal-with-the-Other-Test-Cases)
+  - [Align Clearly with the Description of the Test](#Align-Clearly-with-the-Description-of-the-Test)
+  - [Modify the Rest of the Happy Paths](#Modify-the-Rest-of-the-Happy-Paths)
+- [Testing the Auth Middleware](#Testing-the-Auth-Middleware)
+  - [Token: Empty String v.s. Null](#Token:-Empty-String-v.s.-Null)
+  - [Unit Testing the Auth Middleware](#Unit-Testing-the-Auth-Middleware)
+  - [Mock the header() Method](#Mock-the-header()-Method)
+  -[Mock the _next()_ Function and _res_ Object](#Mock-the-_next()_-Function-and-_res_-Object)
+
+## Introduction
+
 In real-world applicaiton, we need to work with one or more external resources, and that's where Integration Tests come into the picture.
 
 To write integration tests, we need a real database. We (1) populate this database with data for testing. Now (2) we send an http request to an endpoint we want to (3) test and then make an assertion. That assertion may involve inspecting the result or the database.
@@ -1038,6 +1070,407 @@ We don't need to set the token. Also, we replace the code for the request with a
     });
 ```
 
-## Testing the Auth Middleware
+## Testing the Auth Middleware
+
+Currently, we have a single test to test the authorization as shown above so if the client doesn't provide a token, we expect a 401 error.
+
+However, if you look at the authorization middleware's implementation. You can see here we have multiple execution paths. 
+
+_auth.js_ under _middleware_ folder
+```js
+module.exports = function(req, res, next) {
+  const token = req.header('x-auth-token');
+  if (!token) return res.status(401).send('Access Denied. No token provided.');
+
+  try {
+    const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
+    req.user = decoded;
+    next();
+  } catch (ex) {
+    res.status(400).send('Invalid token.');
+  }
+};
+```
+
+So one possibility is that we don't have a token, and that's the path we have tested. 
+
+It is also possible that **the client sends a token, but this is not a valid json web token**. In that case we need to test that the status of the response is 400, which is shown is the _catch_ block. You might be asking why we didn't test this path in our genres suite. The reason for this is because we use this authorization middleware in different parts of our application on different endpoints: for creating a genre, for updating a genre, for deleting a genre as well as other resources.
+
+It doesn't make sense to repeat all this logic every time you want to test an endpoint. So technically, **you should test this authorization middleware separately** to make sure all the execution paths work. And then for endpoints that require authorization, like in this case for posting a genre as following:
+
+_genres.js_
+```js
+router.post('/', auth, async (req, res) => {
+  const { error } = validate(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+
+  const genre = new Genre({ name: req.body.name });
+  await genre.save();
+  res.send(genre);
+});
+```
+
+We just write one test, to **make sure that the authorization middleware is included before our route handler**, like:
+
+_genres.test.js_
+```js
+it('should return 401 if the client is not logged in', async () => {
+  token = '';
+  
+  const res = await exec();
+  expect(res.status).toBe(401);
+});
+```
+
+Now, we're going to write the tests for the other paths in the authorization middleware separately.
+
+Add a new file called _auth.test.js_ under _integration_ folder.
+
+Now here we are mixing the testing of the middleware and route handlers, we're putting all these test files under the integration folder. Now if you have a large application you may want to separate these into different folders, like middleware or routes just like how we have organized our project
+
+_auth.test.js_
+```js
+const { User } = require('../../models/user');
+const { Genre } = require('../../models/genre');
+const request = require('supertest');
+
+describe('auth middleware', () => {
+  let server;
+  let token;
+
+  beforeEach(() => {
+    server = require('../../index');
+    token = new User().generateAuthToken();
+  });
+  afterEach(async () => {
+    server.close();
+    await Genre.remove({});
+  });
+
+  // Define the happy path
+  const exec = () => {
+    return request(server)
+      .post('/api/genres')
+      .set('x-auth-token', token)
+      .send({ name: 'genre1' });
+  }
+
+  it('should return 401 if no token is provided', async () => {
+    token = '';
+
+    const res = await exec();
+    expect(res.status).toBe(401);
+  });
+```
+
+### Token: Empty String v.s. Null
+
+Now what if we set token to null?
+```js
+token = null;
+```
+What do you think is gonna happen? Let's see, save, back in the terminal, our test failed. So we expected 401 but we got 400.
+```shell
+ FAIL  tests/integrationauth.test.js
+  auth middleware
+    ✕ should return 401 if no token is provided (245ms)
+    ✓ should return 400 if token is invalid (5ms)
+    ✓ should return 200 if token is valid (13ms)
+
+  ● auth middleware › should return 401 if no token is provided
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 400
+
+      28 |
+      29 |     const res = await exec();
+    > 30 |     expect(res.status).toBe(401);
+         |                        ^
+      31 |   });
+```
+
+The reason for this is that when we call the _set()_ method, whatever we pass here will be converted to a string, so when we pass null, **that null will be sent as a string, in an actual http request**.
+
+So back to our authorization middleware, _auth.js_, **token will no longer be falsey** and will end up in the _try block_, which will verify that token, obviously it's invalid so that's why we end up with the _catch block_ and get a 400 error.
+
+So, back to our test file. To test that there's no token we shouldn't set this to null, we should use an empty string.
+
+_auth.test.js_
+```js
+  it('should return 401 if no token is provided', async () => {
+    token = '';
+    ...
+```
+
+Now, we will test the second test case. This time, we want to send an **invalid token* so as you saw in the implementation, we should expect a 400 error.
+
+```js
+  try {
+    const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
+    req.user = decoded;
+    next();
+  } catch (ex) {
+    res.status(400).send('Invalid token.');
+  }
+```
+
+_auth.test.js_
+```js
+  it('should return 400 if token is invalid', async () => {
+    token = 'a'; // just set it to a simple string
+
+    const res = await exec();
+    expect(res.status).toBe(400);
+  });
+```
+
+Next, we're going focus on our happy paths. If we send a valid token we expect a response with a status of 200.
+
+```js
+  // Happy path
+  it('should return 200 if token is valid', async () => {
+    const res = await exec();
+    expect(res.status).toBe(200);
+  });
+```
+
+And remember to clean up the _Genre_ model in the _afterEach()_ function.
+```js
+const { Genre } = require('../../models/genre');
+...
+
+describe('auth middleware', () => {
+
+  ...
+
+  afterEach(async () => {
+    server.close();
+    await Genre.remove({});
+  });
+
+  ...
+```
+
+Now one last thing, here in our _auth_ middleware, if the client provides a valid json web token, we want to make sure that the _request.user_ property is populated with the payload of that json web token. So we need to properly test this.
+
+_auth.js_
+```js
+  try {
+    const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
+    req.user = decoded;
+    next();
+
+  ...
+```
+
+However, as far as I know, with this **supertest** library, we don't have access to the request object and we can only work with the response. So to test this, we need to write a unit test.
+
+### Unit Testing the Auth Middleware
+
+We have learned that sometimes you cannot test a specific functionality using integration tests. That's why in any application, you need both unit and integration tests. They compliment each other.
+
+For every piece of functionality, you need to make your own judgement and decide what is a better approach to test your code. There's no one size fits all. Sometimes you may prefer to use unit tests, other times you may prefer integration tests. What matters is you need some kind of test to verify the behavior of your application.
+
+Let's go ahead and write a unit test for this function to make sure that if the client sends a valid json web token, _req.user_ will be populated with the payload of the json web token.
+
+- Add a new folder called _middleware_ under the _unit_ folder.
+- Then create a file called _auth.test.js_ under the _middleware_ folder.
+
+Now We need to call _auth()_ function and pass three arguments: _req_ object, _res_ object, and the _next_ function. 
+```js
+const { User } = require('../../../models/user');
+const auth = require('../../../middleware/auth');
+
+describe('auth middleware', () => {
+  it('should populate req.user with the payload of a valid JWT', () => {
+    const token = new User(user).generateAuthToken();
+
+    // Mock objects
+
+    auth(req, res, next);
+
+    // Assertion here
+
+  });
+});
+
+```
+
+Now we need to mock all of these, so, let's create a request object.
+```js
+const req = {}
+```
+
+### Mock the header() Method
+
+What do we need in this object? Let's go back to our middleware:
+
+_auth.js_
+```js
+module.exports = function(req, res, next) {
+  const token = req.header('x-auth-token'); // Read a header
+  
+  ...
+```
+
+You can see in this function, **we need to call _reg.header_ to read a header**. So, our mock object should have a method called _header()_.
+
+Back to our test file. We set header to **jest.fn()**, and here we call **mockReturnValue()** to return our token. 
+
+```js
+    const req = {
+      header: jest.fn().mockReturnValue(token)
+    };
+
+```
+
+### Mock the _next()_ Function and _res_ Object
+
+Now, back to our middleware, assuming that we have a valid token, we'll end up in the try block. Here we'll verify the token, and then set the _user_ property. Finally, we call the _next()_ function. So _next()_ should also be a mock function.
+
+```js
+module.exports = function(req, res, next) {
+  const token = req.header('x-auth-token');
+  ...
+
+  try {
+    const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
+    req.user = decoded;
+    next();
+
+  ...
+
+```
+
+The mock _next()_ will be a function that does nothing.
+
+_auth.test.js_
+```js
+const next = jest.fn();
+``` 
+
+Also, let's define the _res_ object. In this happy path we are not working with the response but we still need to pass it as an argument to the _auth()_ function.
+
+```js
+const res = {};  // An empty response object
+```
+
+So far, the test file:
+
+```js
+describe('auth middleware', () => {
+  it('should populate req.user with the payload of a valid JWT', () => {
+    const token = new User().generateAuthToken();
+
+    const req = {
+      header: jest.fn().mockReturnValue(token)
+    };
+    const res = {};
+    const next = jest.fn();
+
+    auth(req, res, next);
+
+    expect(req.user).tobeDefined();
+  });
+});
+```
+
+This can pass the test, but let's change this and make it more specific. If we're generating the AuthToken, we want to initialize the user object with two properties, _\_id_ and _isAdmin_. **These are the properties that we put in the payload of our tokens**.
+
+So, let's create a user object:
+```js
+  const user = { _id: 1, isAdmin: true };
+```
+
+However, earlier we have learned that this _\_id_ is an **object id** so if we set that to a number, mongoose is going to ignore that. **You need to pass a valid object id**.
+
+```js
+const mongoose = require('mongoose');
+
+...
+
+    const user = {
+      _id: mongoose.Types.ObjectId(),
+      isAdmin: true
+    };
+
+...
+```
+
+Now we have a user object, and then when creating a new instance of this _User_ model, we pass in this _user_ to initialize it.
+
+```js
+    const token = new User(user).generateAuthToken();
+```
+
+And finally, we change our expectation, so this _req.user_ should match this user object.
+
+```js
+    expect(req.user).toMatchObject(user);
+```
+
+Save, back in the terminal, you have a familiar error.
+
+```shell
+    Expected value to match object:
+      {"_id": "5bf30992ea115def71f0280a", "isAdmin": true}
+    Received:
+      {"_id": "5bf30992ea115def71f0280a", "iat": 1542654354, "isAdmin": true}
+    Difference:
+    Compared values serialize to the same structure.
+    Printing internal object structure without calling `toJSON` instead.
+
+    - Expected
+    + Received
+
+      Object {
+    -   "_id": ObjectID {
+    -     "_bsontype": "ObjectID",
+    -     "id": Buffer [
+    -       91,
+    -       243,
+    -       9,
+    -       146,
+    -       234,
+    -       17,
+    -       93,
+    -       239,
+    -       113,
+    -       240,
+    -       40,
+    -       10,
+    -     ],
+    -   },
+    +   "_id": "5bf30992ea115def71f0280a",
+        "isAdmin": true,
+      }
+
+      19 |     auth(req, res, next);
+      20 |
+    > 21 |     expect(req.user).toMatchObject(user);
+         |                      ^
+      22 |   });
+      23 | });
+      24 |
+```
+
+**We expected _\_id_ to be an ObjectId which is a complex structure, but what we got was a string**. 
+
+So, technically when we create a user object, this _\_id_ property is an object id, but when we decode a json web token, we're dealing with a string:
+```js
+const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
+```
+
+To make sure our expectation pass, we need to convert our object id to a hexadecimal string:
+```js
+    const user = {
+      _id: mongoose.Types.ObjectId().toHexString(),
+      isAdmin: true
+    };
+```
+Now, back in the terminal, all tests are passing.
+
 
 

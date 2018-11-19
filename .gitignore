@@ -1,5 +1,6 @@
 /node_modules
 /.vscode
+/coverage
 .DS_Store
 logfile.log
 uncaughtExceptions.log
