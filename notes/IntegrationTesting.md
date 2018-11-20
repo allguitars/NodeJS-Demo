@@ -28,7 +28,7 @@
   - [Token-Empty String V.S. Null](#Token-Empty-String-V.S.-Null)
   - [Unit Testing the Auth Middleware](#Unit-Testing-the-Auth-Middleware)
   - [Mock the header() Method](#Mock-the-header()-Method)
-  -[Mock the _next()_ Function and _res_ Object](#Mock-the-_next()_-Function-and-_res_-Object)
+  - [Mock the _next()_ Function and _res_ Object](#Mock-the-_next()_-Function-and-_res_-Object)
 
 ## Introduction
 
@@ -1472,6 +1472,128 @@ To make sure our expectation pass, we need to convert our object id to a hexadec
 ```
 Now, back in the terminal, all tests are passing.
 
+## Code Coverage
 
+As you write unit and integration tests for various parts of your application, you might be wondering how much of your code is covered by tests, and what are some scenarios that we have not tested? And that's where a code coverage tool comes in the picture. 
 
+Add a new flag in _package.json_:
+```json
+  "scripts": {
+    "test": "jest --watchAll --verbose --runInBand --coverage"
+  },
+```
 
+Save, now back in the terminal, we need to stop the test process and run npm test one more time.We will have a report of how much of our code is covered in tests.
+
+![coverage](sc/coverage-terminal.png)
+
+**jest** also generates an html report of how much of our code is covered by tests.
+
+![all files](sc/coverage-all.png)
+
+In this status bar column, we can see how much of the files in that folder are covered by tests. For example, you can see a majority of the files in the models folder are covered by tests. are covered by tests. Now **this does NOT mean that we explicitly written tests for the files in this folder**. It means that **somewhere we have tests, and when we execute those tests, it will call the code inside this folder**. 
+
+For example, in the models folder:
+
+![models](sc/coverage-models.png)
+
+We can see that 100% of the code in _genre.js_ is tested. That doesn't mean that you have explicitly written tests for this file. But because we tested our _genres route_, in some tests we used the genre model, all the code in this file has been exercised by one or more tests. So this is just a basic guideline.
+
+Now let's go to the middleware folder. Look at this auth module.
+![middleware](sc/coverage-middleware.png)
+
+Here on this table we have a few parameters. You have Statements, Branches or Execution paths, Functions and Lines. So in our auth module, we have a total of 11 statements, and 100% of those are covered by tests. We have two branches or two execution paths, and 100% of them are also covered by tests.
+
+Let's have a quick look at this execution path:
+```js
+module.exports = function(req, res, next) {
+  const token = req.header('x-auth-token');
+  if (!token) return res.status(401).send('Access Denied. No token provided.');
+
+  try {
+    // Valid token
+    const decoded = jwt.verify(token, config.get('jwtPrivateKey'));
+    req.user = decoded;
+    next();
+  } catch (ex) {
+    // Invalid token
+    res.status(400).send('Invalid token.');
+  }
+};
+```
+
+Now more accurately, here we have three execution paths. Because it's possible a token is valid or invalid. But our code coverage tool determines the branches or execution paths based on the return statements.
+
+Now back to html table, we also have functions, so in our auth module we have only one function and that function is tested. And finally, we have the number of lines of code. And again, what you see here is not exactly what you see in your code editor because in this module, we actualluy have 16 lines of code, and that is based on how we have formatted our code. However, the code coverage tool sees this differently
+
+This table tells us **what areas of the code we need to focus more on**. For example, you can see our _admin_ module is really low on testing so you need to focus more on this module.
+
+Let's go back to all files and then go to the routes folder. Here's our _genres_ module. You can see we have tested over 60% of the code in this module. 
+
+![routes](sc/coverage-routes.png)
+
+Now let's click on the file name and we will see the code in this module. Now you can see the areas the are not covered by tests, highlighted in red.
+
+![highlight](sc/genres-highlight.png)
+
+For example, earlier we wrote tests to get a single genre; however, this line of this function is not covered by any tests. 
+```js
+// Get a single genre
+router.get('/:id', validateObjectId, async (req, res) => {
+  const genre = await Genre.findById(req.params.id);
+
+  if (!genre)
+    return res.status(404).send('The genre with given id was not found!');
+
+  res.send(genre);
+});
+```
+
+Let's see why.
+
+_genres.test.js_
+```js
+  describe('GET /:id', () => {
+    it('should return a genre if valid id is passed', async () => {
+      const genre = new Genre({ name: 'genre1' });
+      await genre.save();
+
+      const res = await request(server).get('/api/genres/' + genre._id);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('name', genre.name);
+    });
+
+    it('should return 404 if invalid id is passed', async () => {
+      const res = await request(server).get('/api/genres/1');
+      expect(res.status).toBe(404);
+    });
+  });
+```
+
+Here are the two tests that we wrote for this endpoint. Look at the second test case, "it should return 404 if valid id is passed". We passed '1' as an invalid id, and with our current implementation, this _validateObjectId_ middleware will kick in (See _genres.js_) and return a 404 error. However, if we pass a valid object id, there is no test to assert that we get a 404 error. That's why this code is highlighted in red.
+```js
+  if (!genre)
+    return res.status(404).send('The genre with given id was not found!');
+```
+
+So, we can add the following test case.
+
+_genres.test.js_
+```js
+  describe('GET /:id', () => {
+    
+    ...
+
+    it('should return 404 if no genre with the given id exists', async () => {
+      // Instead of sending 1, we send a valid object id here.
+      const id = mongoose.Types.ObjectId();
+      const res = await request(server).get('/api/genres/' + id);
+      expect(res.status).toBe(404);
+    });
+  });
+
+```
+
+Now save, back in the terminal, **jest** re-runs our test and regenerates the coverage report every time. If we refresh now, this red highlight will be gone.
+
+![fix highlight](sc/no-highlight.png)
