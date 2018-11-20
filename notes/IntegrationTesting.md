@@ -29,6 +29,7 @@
   - [Unit Testing the Auth Middleware](#Unit-Testing-the-Auth-Middleware)
   - [Mock the header() Method](#Mock-the-header()-Method)
   - [Mock the _next()_ Function and _res_ Object](#Mock-the-_next()_-Function-and-_res_-Object)
+- [Code Coverage](#Code-Coverage)
 
 ## Introduction
 
