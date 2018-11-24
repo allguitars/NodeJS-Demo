@@ -1,8 +1,8 @@
 # Test-driven Development (TDD)
 
-- A approach to build software.
-- Also called Test-first.
-- **You wirte your tests before writing the application or production code**.
+- A approach to build the software.
+- Also called Test-first Development.
+- **Write your tests before writing the application or production code**.
 
 ## Foundation of TDD
 
