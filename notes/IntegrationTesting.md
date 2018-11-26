@@ -213,7 +213,7 @@ await Genre.remove({});
 However, there is a problem with this implementation. If one of the expectations fail, this code will never be executed so the proper place to do the cleanup is in _afterEach_ function. Also because we have await here, we need to mark this function as **async**.
 ```js
   afterEach(async () => {
-    server.close();
+    await server.close();
     await Genre.remove({});
   });
 ```
@@ -235,7 +235,7 @@ let server;
 describe('/api/genres', () => {
   beforeEach(() => { server = require('../../index'); });
   afterEach(async () => {
-    server.close();
+    await server.close();
     await Genre.remove({});
   });
 
@@ -421,7 +421,7 @@ let server;
 describe('/api/genres', () => {
   beforeEach(() => { server = require('../../index'); });
   afterEach(async () => {
-    server.close();
+    await server.close();
     await Genre.remove({});
   });
 
@@ -1144,7 +1144,7 @@ describe('auth middleware', () => {
     token = new User().generateAuthToken();
   });
   afterEach(async () => {
-    server.close();
+    await server.close();
     await Genre.remove({});
   });
 
@@ -1247,7 +1247,7 @@ describe('auth middleware', () => {
   ...
 
   afterEach(async () => {
-    server.close();
+    await server.close();
     await Genre.remove({});
   });
 
