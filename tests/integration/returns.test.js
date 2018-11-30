@@ -1,5 +1,7 @@
+const moment = require('moment');
 const request = require('supertest');
 const { Rental } = require('../../models/rental');
+const { Movie } = require('../../models/movie');
 const { User } = require('../../models/user');
 const mongoose = require('mongoose');
 
@@ -8,6 +10,7 @@ describe('/api/returns', () => {
   let customerId;
   let movieId;
   let rental;
+  let movie;
   let token;
 
   const exec = () => {
@@ -25,6 +28,15 @@ describe('/api/returns', () => {
     movieId = mongoose.Types.ObjectId();
     token = new User().generateAuthToken();
 
+    movie = new Movie({
+      _id: movieId,
+      title: '12345',
+      dailyRentalRate: 2,
+      genre: { name: '12345' },
+      numberInStock: 10
+    });
+    await movie.save();
+
     rental = new Rental({
       customer: {
         _id: customerId,
@@ -37,13 +49,13 @@ describe('/api/returns', () => {
         dailyRentalRate: 2
       }
     });
-
     await rental.save();
   });
 
   afterEach(async () => {
     await server.close();
     await Rental.remove({});
+    await Movie.remove({});
   });
 
   it('should return 401 if client is not logged in', async () => {
@@ -95,9 +107,55 @@ describe('/api/returns', () => {
 
     expect(res.status).toBe(200);
   });
+
+  it('should set the dateReturned if input is valid', async () => {
+    await exec();
+
+    // const rental = await Rental.findOne({
+    //   'customer._id': customerId,
+    //   'movie._id': movieId
+    // });
+    const rentalInDb = await Rental.findById(rental._id);
+    const diff = new Date() - rentalInDb.dateReturned; // in ms
+
+    // The worst case where the test is really slow
+    expect(diff).toBeLessThan(10 * 1000);
+  });
+
+  it('should set the rentalFee if input is valid', async () => {
+    rental.dateOut = moment().add(-7, 'days').toDate();
+    await rental.save();
+
+    await exec();
+
+    const rentalInDb = await Rental.findById(rental._id);
+    expect(rentalInDb.rentalFee).toBe(14);
+  });
+
+  it('should increase the movie stock if input is valid', async () => {
+    await exec();
+
+    const movieInDb = await Movie.findById(movieId);
+    expect(movieInDb.numberInStock).toBe(movie.numberInStock + 1);
+  });
+
+  it('should return the rental if input is valid', async () => {
+    const res = await exec();
+
+    // Get the rental from the database
+    const rentalInDb = await Rental.findById(rental._id);
+
+    // ------ should match with the updated rental ------
+    // expect(res.body).toHaveProperty('dateOut');
+    // expect(res.body).toHaveProperty('dateReturned');
+    // expect(res.body).toHaveProperty('rentalFee');
+    // expect(res.body).toHaveProperty('customer');
+    // expect(res.body).toHaveProperty('movie');
+
+    // Better way to implement this assertion
+    expect(Object.keys(res.body)).toEqual(expect.arrayContaining([
+      'dateOut', 'dateReturned', 'rentalFee', 'customer', 'movie'
+    ]));
+  });
 });
-
-
-
-
 

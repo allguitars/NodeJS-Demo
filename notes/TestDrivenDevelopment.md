@@ -4,6 +4,31 @@
 - Also called Test-first Development.
 - **Write your tests before writing the application or production code**.
 
+## Content
+- [Foundation of TDD](#Foundation-of-TDD)
+- [Benefits of TDD](#Benefits-of-TDD)
+- [Implementation of Returning a Movie](#Implementation-of-Returning-a-Movie)
+  - [Test Cases](#Test-Cases)
+- [Populating the DB](#Populating-the-DB)
+- [Testing the Authorization](#Testing-the-Authorization)
+- [Testing the Input](#Testing-the-Input)
+- [Refactoring Tests](#Refactoring-Tests)
+- [Looking Up an Object](#Looking-Up-an-Object)
+- [Testing If Rental Processed](#Testing-If-Rental-Processed)
+- [Testing the Valid Request](#Testing-the-Valid-Request)
+- [Testing the Return Date](#Testing-the-Return-Date)
+- [Testing the Rental Fee](#Testing-the-Rental-Fee)
+- [Teseting the Movie Stock](#Teseting-the-Movie-Stock)
+- [Testing the Response](#Testing-the-Response)
+- [Refactoring the Validation Logic](#Refactoring-the-Validation-Logic)
+- [Mongoose Static Methods](#Mongoose-Static-Methods)
+  - [Static Methods and Instance Methods](#Static-Methods-and-Instance-Methods)
+  - [The statics Property](#The-statics-Property)
+- [Refactoring the Domain Logic](#Refactoring-the-Domain-Logic)
+  - [Information Expert Principle](#Information-Expert-Principle)
+  - [Instance Methods](#Instance-Methods)
+  - [Response Code 200](#Response-Code-200)
+
 ## Foundation of TDD
 
 - **Start by writing a failing test** - this test should fail because you don't have any application code that would make it pass. 
@@ -748,5 +773,686 @@ Now, all our tests should pass.
 
 ```js
 // Set the return date
+```
+
+When we execute _exec()_, somewhere else will modify the database so that object in memory is not aware of changes in the database. That's why we need to reload/query the rental and save it to a new variable, _rentalInDb_.
+
+```js
+  it('should set the dateReturned if input is valid', async () => {
+    await exec();
+
+    const rentalInDb = await Rental.findById(rental._id);
+
+    // A gereral test. Will modify it later
+    expect(rentalInDb.dateReturned).toBeDefined();
+  });
+```
+
+Now here in our route handler, we can write simple code like this:
+
+_returns.js_
+```js
+router.post('/', auth, async (req, res) => {
+  ...
+
+  rental.dateReturned = 1; // The simples code to make the test pass.
+  await rental.save();
+
+  return res.status(200).send();
+});
+```
+
+The assertion is still a bit too general. We want to be more specific, but here's the tricky part. In our production code, in the route handler, we should set this to the current time, but in our test, when we make an assertion against the property, we won't have the value of the current time. Well we do, but that it is already different than the one set by the route handler.
+
+So, when testing scenarios like that, we should calculate the difference between the current time and the value of this property, and ensure the difference is less than, let's say, 10 seconds in the worst case scenario. Now let's modify this assertion.
+
+```js
+  it('should set the dateReturned if input is valid', async () => {
+    await exec();
+
+    const rentalInDb = await Rental.findById(rental._id);
+    const diff = new Date() - rentalInDb.dateReturned; // in ms
+    
+    // The worst case where the test is really slow
+    expect(diff).toBeLessThan(10 * 1000);
+  });
+```
+
+Now, change the production code.
+```js
+router.post('/', auth, async (req, res) => {
+  ...
+
+  rental.dateReturned = new Date();
+  await rental.save();
+
+  return res.status(200).send();
+});
+```
+
+## Testing the Rental Fee
+
+```js
+// Calculate the rental fee
+```
+
+Now here's the tricky part. The _dateOut_ property of the _rental_ object that we saved to the database in the beforeEach() function, by default, will be automatically set to the current time by Mongoose. Now to test this scenario, we want to make sure that this movie has been out for at least one day, not one second. So, we need to modify this rental document in the database before calling the _exec()_ function.
+
+The simplest way is to use a library called **moment.js** for working with date and time. Now we can install this library as a dependency of our application, or install it only for development purposes when writing tests. We are going to install it as an application dependency because in our production code, we're also going to calculate the number of days the movie has been out.
+
+```shell
+$ npm i moment
+```
+
+Back in our test, first we need to import this library on the top:
+
+```js
+const moment = require('moment');
+```
+
+- We call _moment()_ to get the current DateTime.
+- Then we call _add()_ and pass, let's say, -7, as the first argument. For the second argument we pass _days_ as a string.
+
+```js
+// This gives us a moment object that is 7 days before. 
+rental.dateOut = moment().add(-7, 'days');
+```
+
+Now we need to convert this to a plain JavaScript object when saving this rental because the type of this _dateOut_ property is the standard JavaScript **Date**.
+
+```js
+rental.dateOut = moment().add(-7, 'days').toDate();
+```
+
+Now let's write the assertion. Assuming that this movie has been out for seven days, and we set the _dailyRentalRate_ of the movie for this rental to 2 dollars.
+
+```js
+  it('should set the rentalFee if input is valid', async () => {
+    rental.dateOut = moment().add(-7, 'days').toDate();
+    await rental.save();
+
+    await exec();
+
+    const rentalInDb = await Rental.findById(rental._id);
+    expect(rentalInDb.rentalFee).toBe(14);
+  });
+```
+
+Back in our production code.
+- Call _moment()_ to get the current datetime
+- Use _diff()_ method to get how many days are thes dates apart
+
+```js
+const moment = require('moment');
+
+...
+
+router.post('/', auth, async (req, res) => {
+  ...
+
+  rental.dateReturned = new Date();
+  
+  // --------------------- added ---------------------
+  const rentalDays = moment().diff(rental.dateOut, 'days');
+  rental.rentalFee = rentalDays * rental.movie.dailyRentalRate;
+  // -------------------------------------------------
+  await rental.save();
+
+  return res.status(200).send();
+});
+```
+
+## Teseting the Movie Stock
+
+```js
+// Increase the stock after return
+```
+
+This test requires a little bit more work because before sending this request, we should make sure to have that movie in the database. When we execute the request, we can inspect that the number of movie in stock has been increased by 1.
+
+First, let's go back to our _beforeEach()_ function. Just like how we created our _rental_, we should also create a _movie_.
+
+```js
+const { Movie } = require('../../models/movie');
+...
+
+describe('/api/returns', () => {
+  ...
+
+  let movie; // Added
+
+  ...
+
+  beforeEach(async () => {
+    server = require('../../index');
+    customerId = mongoose.Types.ObjectId();
+    movieId = mongoose.Types.ObjectId();
+    token = new User().generateAuthToken();
+
+    // You can see duplicate of movie object here.
+    // We could have refactored this and put them in a separate 
+    // constant, but it doesn't really matter as much in this case
+    // because we're not going to come back and modify the number here
+    // in the future, and then we'll have to modify 2 different places.
+    // So, these are constant values we're going to use for all the 
+    // tests in this suite. 
+    // ----------------- Added -----------------
+    movie = new Movie({
+      _id: movieId,
+      title: '12345',
+      dailyRentalRate: 2,
+      genre: { name: '12345' },  // required property
+      numberInStock: 10
+    });
+    await movie.save();
+    // -----------------------------------------
+
+    rental = new Rental({
+      customer: {
+        _id: customerId,
+        name: '12345',
+        phone: '12345'
+      },
+      movie: {  // duplicate
+        _id: movieId,
+        title: '12345',
+        dailyRentalRate: 2
+      }
+    });
+    await rental.save();
+  });
+
+```
+
+Now let's create our test. 
+
+```js
+  it('should increase the movie stock if input is valid', async () => {
+    await exec();
+
+    const movieInDb = await Movie.findById(movieId);
+    expect(movieInDb.numberInStock).toBe(11);
+  });
+
+```
+
+Now there is another way to write this test. When someone is looking at this code, they may say where did that _11_ come from? It looks like a magic number -- That's a fair argument.
+
+So the other way to write this is as following.
+```js
+  it('should increase the movie stock if input is valid', async () => {
+    await exec();
+
+    const movieInDb = await Movie.findById(movieId);
+    expect(movieInDb.numberInStock).toBe(movie.numberInStock + 1);
+  });
+```
+
+Now, back in our route handler. To make the test pass, we can use the **query-first** or **update-first** approach. Let's use the update first appraoch here because we don't really need to read the movie in this case.
+
+**update()**
+- As a first argument, we pass our query object
+- As a second argument, we pass our update object. Here we use the **$inc** operator. We need to increment the value of _numberInStock_ property by 1.
+- Note that you need to **await** the _update()_ function, otherwise **your test will get the wrong value of _numberInStock_ becuase it hasn't completed the update**.
+
+```js
+const { Movie } = require('../models/movie');
+...
+
+router.post('/', auth, async (req, res) => {
+  ...
+
+  const rentalDays = moment().diff(rental.dateOut, 'days');
+  rental.rentalFee = rentalDays * rental.movie.dailyRentalRate;
+  await rental.save();
+
+  // -------------------- added --------------------
+  await Movie.update({ _id: rental.movie._id }, {
+    $inc: { numberInStock: 1 }
+  });
+  // -----------------------------------------------
+
+  return res.status(200).send();
+});
+
+```
+
+Now one thing we forgot was to do cleanup after we create that movie. So, in the _afterEach()_ function, we should also remove all the movie documents in our movies collection.
+
+_returns.test.js_
+```js
+  afterEach(async () => {
+    await server.close();
+    await Rental.remove({});
+    await Movie.remove({});  // added
+  });
+
+```
+
+## Testing the Response
+
+Finally, the last test case:
+
+```js
+// Return the rental in the body of the response
+```
+
+Writet the test case first:
+
+```js
+  it('should return the rental if input is valid', async () => {
+    const res = await exec();
+
+    // Get the rental from the database
+    const rentalInDb = await findById(rental._id);
+
+    // should match with the updated rental
+    expect(res.body).toMatchObject(rentalInDb);
+  });
+```
+
+_returns.js_
+```js
+router.post('/', auth, async (req, res) => {
+  ...
+
+  await Movie.update({ _id: rental.movie._id }, {
+    $inc: { numberInStock: 1 }
+  });
+
+  // Send the rental object in the response -------
+  return res.status(200).send(rental);
+  // ----------------------------------------------
+});
+
+```
+
+Save and run, then we have the following error:
+```shell
+    Difference:
+    - Expected
+    + Received
+
+    @@ -5,12 +5,12 @@
+          "_id": "5bffaffede80b8b1667b8f4b",
+          "isGold": false,
+          "name": "12345",
+          "phone": "12345",
+        },
+    -   "dateOut": 2018-11-29T09:23:10.151Z,
+    -   "dateReturned": 2018-11-29T09:23:10.155Z,
+    +   "dateOut": "2018-11-29T09:23:10.151Z",
+    +   "dateReturned": "2018-11-29T09:23:10.155Z",
+        "movie": Object {
+          "_id": "5bffaffede80b8b1667b8f4c",
+          "dailyRentalRate": 2,
+          "title": "12345",
+        },
+
+      147 |
+      148 |     // should match with the updated rental
+    > 149 |     expect(res.body).toMatchObject(rentalInDb);
+
+```
+
+The reason this test failed is because of how these two properties _dateOut_ and _dateReturned_ are set. For the _rental_ object that we get from Mongoose, the type of these properties was set to **Date** so their value is a **standard JavaScript Datetime**.
+
+However, for the object that we are returning in the body of the response, that's **a standard which is formatted using JSON** so the value is a **string**.
+
+So, this assertion is a little bit too specific, we want to make it a little more general. We should **look for the existence of certain properties in the body of the response**.
+
+```js
+  it('should return the rental if input is valid', async () => {
+    const res = await exec();
+
+    const rentalInDb = await Rental.findById(rental._id);
+
+    // ---------------- modified ----------------
+    expect(res.body).toHaveProperty('dateOut');
+    expect(res.body).toHaveProperty('dateReturned');
+    expect(res.body).toHaveProperty('rentalFee');
+    expect(res.body).toHaveProperty('customer');
+    expect(res.body).toHaveProperty('movie');
+    // ------------------------------------------
+  });
+
+```
+
+Now, all tests are passing. However, this code is a little bit too lengthy. Let's go for a better way to rewrite this.
+
+_res.body_ is an object right so we can get the name of all the properties in this object by calling **Object.keys()** method. Also, we make sure this array equals another array.
+
+```js
+  it('should return the rental if input is valid', async () => {
+    const res = await exec();
+
+    const rentalInDb = await Rental.findById(rental._id);
+
+    expect(Object.keys(res.body)).toEqual(expect.arrayContaining([
+      'dateOut', 'dateReturned', 'rentalFee', 'customer', 'movie'
+    ]));
+
+```
+
+## Refactoring the Validation Logic
+
+Now here's the beauty of Test-driven Development. The route handler (_returns.js_) that we created has been 100 percent covered by tests. So, now we can easily refactor this function, come up with a better implementation, run all the tests, and **if all these tests pass, we would be confident that we didn't break anything during this refactoring**.
+
+The first thing I want to modify here is how we validate the input.
+
+```js
+  if (!req.body.customerId) return res.status(400).send('customerId not provided.');
+  if (!req.body.movieId) return res.status(400).send('movieId not provided.');
+```
+
+Instead of these two lines, we want to validate using **joi**.
+
+_returns.js_
+```js
+const Joi = require('joi'); // added
+
+...
+
+router.post('/', auth, async (req, res) => {
+  // ------------------- replaced -------------------
+  const { error } = validateReturn(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+  // ------------------------------------------------
+  
+  ...
+
+});
+
+// added
+function validateReturn(req) {
+  // In this req, we want to have these two properties
+  const schema = {
+    customerId: Joi.objectId().required(),
+    movieId: Joi.objectId().required()
+  };
+  return Joi.validate(req, schema);
+}
+
+module.exports = router;
+
+```
+
+Save and run, all tests are still passing so we didn't break anything.
+
+You might be asking, what was the point of this refactoring -- We replaced two lines with another two lines so we didn't really make the code shorter. That is true. However, note that we have these two lines in a lot of route handlers. 
+
+```js
+  const { error } = validateReturn(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+```
+
+This is repetitive so we can move this code into a middleware function, just like how we check the authentication using a middleware function. 
+
+Now, we are going to write this middleware function in _returns.js_ and then movie it to a different file.
+
+_returns.js_
+
+```js
+const validate = (req, res, next) => {
+  const { error } = validator(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+};
+```
+
+Now here's the tricky part. This first line, which shows the name of the validater function, is different in each route handler, such as validateReturn, validateGenre, and so on. So, we need to be able to **dynamically pass a validator function** here.
+
+To fix this problem, instead of passing _req_, _res_ and _next_ here, we're going to pass _validator_, which is a **function**. And instead of directly executing the code for validation, we're going to return a middleware function to give to **Express**. **Express** will call that middleware function as part of processing the request.
+
+Now, we move the logic for validation inside of this middleware function being returned. And finally, replace the _validateReturn_ with _validator_.
+
+```js
+const validate = (validator) => {  // pass in a function
+  
+  // return a middleware (a function that takes req, res, and next)
+  return (req, res, next) => {
+
+    // --------------- validation logic ---------------
+    const { error } = validator(req.body);
+    if (error) return res.status(400).send(error.details[0].message);
+    // ------------------------------------------------
+
+    next();
+  };
+};
+```
+
+If we have an error we're going to return a 400 response, otherwise, we're going to call _next()_. 
+
+Now, we can easily use this when setting up our route. Here, we're going to pass an array of middleware functions. First, we want to make sure that the client is logged in. Next, we validate the request, and as a _validator_ we **pass in a reference to our _validateReturn_ function**. After that, we have our route handler.
+
+```js
+router.post('/', [auth, validate(validateReturn)], async (req, res) => {
+  
+  ...
+
+```
+
+Ok, let's move this middleware to a different file. Under _middleware_ folder, create a new file called _validate.js_.
+
+_validate.js_
+```js
+module.exports = (validator) => {
+  return (req, res, next) => {
+    const { error } = validator(req.body);
+    if (error) return res.status(400).send(error.details[0].message);
+
+    next();
+  };
+};
+```
+
+And then import this module in _returns.js_.
+
+```js
+const validate = require('../middleware/validate');
+
+...
+
+```
+
+Back to the terminal, all tests are passing.
+
+Now, with this new _validate_ function, we can also refactor the existing route handlers and remove the validation logic that we have repeated in almost every route handler. Just Make sure to write a test for each route handler first you're going to modify. At a minimum you should test the validation in that function.
+
+## Mongoose Static Methods
+
+The next thing we want to improve here is how we look up a rental.
+
+_returns.js_
+```js
+  const rental = await Rental.findOne({
+    'customer._id': customerId,
+    'movie._id': movieId
+  });
+```
+
+Imagine that somewhere else in the application, if we wanted to look up a rental, then we would have to call this _findOne()_ method, and pass an object with the properties, _customer.\_id_ and _movie.\_id_. It's a little bit inconvenient.
+
+Would it be nicer if we could get a rental like this:
+
+```js
+const rental = await Rental.lookup(customerId, movieId);
+```
+
+### Static Methods and Instance Methods
+
+In object oriented programming, we have two types of methods: **static methods** and **instance methods**. A static method is a method that is available directly on a class, such as:
+
+_Rental.lookup()_
+
+In contrast, an instance method is one that is available on an object or an instance of a class. Earlier, we added an instance method to our _User_ class so we can create a new user and call _generateAuthToken()_ method.
+
+_new User().generateAuthToken()_
+
+- We use **instance methods** when we are working with a particular object, and the result that we get will be dependent on that object.
+- We use a **static method** when we are not working with a particular object. That's why they're available on a class.
+
+### The statics Property
+
+Now we need to extract the schema to a constant so that we can use that constant to add a static method to it.
+
+_rental.js_
+
+```js
+const rentalSchema = new mongoose.Schema({
+  customer: {
+      ...
+  },
+  movie: {
+    ...
+  },
+  dateOut: {
+    ...
+  },
+  dateReturned: {
+    ...
+  },
+  rentalFee: {
+    ...
+  }
+})
+```
+
+_rentalSchema_ has a property called _statics_, which returns an object, and in this object we can define the static methods in the _Rental_ class. We set it to a function, and this function should take two paramters, _customerId_ and _movieId_.
+
+Here we don't need to define a separate constant, we're going to return the result immediately.
+
+Also, we don't need to await here and we **simply return the Promise that we get from _findOne_ method and let the caller of the _lookup_ method await that Promise**.
+
+```js
+// When using "this" keyword, you cannot use the arrow function syntax!
+rentalSchema.statics.lookup = function (customerId, movieId) {
+  return this.findOne({  // this references the Rental class
+    'customer._id': customerId,
+    'movie._id': movieId
+  });
+}
+
+const Rental = mongoose.model('Rental', rentalSchema);
+
+```
+
+_returns.js_
+
+```js
+...
+
+router.post('/', [auth, validate(validateReturn)], async (req, res) => {
+  const rental = await Rental.lookup(req.body.customerId, req.body.movieId);
+
+...
+
+```
+
+The benefit of having automated tests while doing this refactoring is that when you make a mistake, these tests will tell you immediately that this refactoring is not working.
+
+If we did not have these tests, we would have to fire up postman, and keep calling up this endpoint with different values to make sure all different edge cases are working, which is very tedious. And the problem is, as our application grows larger and larger, manually testing all these execution paths becomes very costly, and sometimes impossible.
+
+It is possible that sometimes you deploy our application to the production and have bugs you are not aware of. This can be very costly to the business that is using your software. That's why we write automated tests. It will take some time and require some effort and learning curve, but these tests help us catch bugs earlier in the software development life cycle.
+
+## Refactoring the Domain Logic
+
+Currently, this route handler is too busy calculating what should happen to the state of this rental object.
+
+_returns.js_
+```js
+...
+router.post('/', [auth, validate(validateReturn)], async (req, res) => {
+
+  ...
+
+  this.dateReturned = new Date();
+
+  const rentalDays = moment().diff(this.dateOut, 'days');
+  this.rentalFee = rentalDays * this.movie.dailyRentalRate;
+
+  ...
+
+```
+
+### Information Expert Principle
+
+**Any logic that modifies the state of an object should be encapsulated in that object itself.**
+
+All this logic that we have here is based on the state of the _rental_. 
+
+- We are looking at the _rental.dateOut_,
+- based on that we calculate the _rentalDays_, and
+- based on that we calculate the _rentalFee_.
+
+So, all this logic can be encapsulated in the _rental_ object itself.
+
+### Instance Methods
+
+Now we're going to modify a rental object and add a new method called _return()_. When we call this method, it will set the return date to Now and calculate the rental fee.
+
+We need an instance method because this method should be available on a rental object. Instead of the statics property we use a **methods** property.
+
+_rental.js_
+
+```js
+// Replace "rental" with "this"
+
+rentalSchema.methods.return = function () {
+  this.dateReturned = new Date();
+
+  const rentalDays = moment().diff(this.dateOut, 'days');
+  this.rentalFee = rentalDays * this.movie.dailyRentalRate;
+}
+```
+
+_returns.js_
+
+```js
+router.post('/', [auth, validate(validateReturn)], async (req, res) => {
+  ...
+
+  rental.return();  // added
+  await rental.save();
+
+  ...
+
+```
+
+Back to the termal, there is an error:
+
+```shell
+error: moment is not defined ReferenceError: moment is not defined
+    at model.moment (/Users/yihsiulee/GoogleDrive/ExerciseFiles/NodeJS/Udemy/Node-js-The-Complete-Guide-to-Build-RESTful-APIs/movie-project/models/rental.js:73:22)
+```
+
+Again, the beauty of automated tests! Without this test we had to manually test every edge case.
+
+Because we cut the logic and paste it into a different file, we need to import the module used in this logic.
+
+_rental.js_
+
+```js
+const moment = require('moment');
+
+```
+
+Now, back to the termimal, all tests are passing. Beautiful!
+
+### Response Code 200
+
+Actually, we don't have to explicitly set the status to 200 because _Express_ will set that by default.
+
+_returns.js_
+
+```js
+router.post('/', [auth, validate(validateReturn)], async (req, res) => {
+  ...
+
+  // return res.status(200).send(rental)
+  return res.send(rental);
+  
+});
+
 ```
 
