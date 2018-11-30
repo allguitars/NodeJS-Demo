@@ -1419,7 +1419,7 @@ router.post('/', [auth, validate(validateReturn)], async (req, res) => {
 
 ```
 
-Back to the termal, there is an error:
+Back to the terminal, there is an error:
 
 ```shell
 error: moment is not defined ReferenceError: moment is not defined
@@ -1437,7 +1437,7 @@ const moment = require('moment');
 
 ```
 
-Now, back to the termimal, all tests are passing. Beautiful!
+Now, back to the terminal, all tests are passing. Beautiful!
 
 ### Response Code 200
 
