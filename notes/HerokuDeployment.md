@@ -10,7 +10,7 @@
 - [Preparing the App for Deployment](#Preparing-the-App-for-Deployment)
 - [Adding the Code to a Git Repository](#Adding-the-Code-to-a-Git-Repository)
 - [Deploying to Heroku](#Deploying-to-Heroku)
-- [Viewing Logs (Debugging)](Viewing-Logs-(Debugging))
+- [Viewing Logs](#Viewing-Logs)
 - [Setting Environment Variables](#Setting-Environment-Variables)
 - [MongoDB in the Cloud](#MongoDB-in-the-Cloud)
 
@@ -108,8 +108,6 @@ _package.json_
 
 ```json
   "scripts": {
-    ...
-
     "start": "node index.js"
   },
 ```
@@ -282,7 +280,7 @@ Now, open up Postman, paste the address and send a GET request to /api/genres. W
 
 ![503](sc/503.png)
 
-## Viewing Logs (Debugging)
+## Viewing Logs
 
 To dianose why our application crashed, we can look at Heroku logs here in the terminal, or we can look at our dashboard. 
 
@@ -363,8 +361,6 @@ The reason for this is because we set our **connection string** to an instance o
 _default.json_
 ```json
 {
-  ...
-
   "db": "mongodb://localhost/vidly"
 }
 ```
