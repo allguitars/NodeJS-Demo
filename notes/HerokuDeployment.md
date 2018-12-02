@@ -346,7 +346,7 @@ One thing you need to know about the cloud architecture in Heroku. In Heroku, by
 
 So, if you want to use storage, there are various add-ons for storing different kinds of data. 
 
-The only thing that these servers for these dino's share is these environment variables. So if you have 10 dynos, you don't need to explicitly set these environment variables on each dyno. You set them at the application level, and Heroku will automatically replicate these across all dynos. Now, we have set these environment variables, and every time there is a change in the value of these, Heroku will automatically restart our application.
+The only thing that these servers for these dynos share is these environment variables. So if you have 10 dynos, you don't need to explicitly set these environment variables on each dyno. You set them at the application level, and Heroku will automatically replicate these across all dynos. Now, we have set these environment variables, and every time there is a change in the value of these, Heroku will automatically restart our application.
 
 Now, let's go back to the log, we see another error:
 
