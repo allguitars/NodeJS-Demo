@@ -213,7 +213,7 @@ $ git push heroku master
 
 During the process, you can see we can see Heroku is installing binaries, in this case, the engine that we specified which is node version 8.11.1. After that, it's installing our dependencies, node modules, and finally you can see our application is deployed to Heroku.
 
-```shell
+```
 ➜  movie-project git:(master) git push heroku master
 Enumerating objects: 6, done.
 Counting objects: 100% (6/6), done.
