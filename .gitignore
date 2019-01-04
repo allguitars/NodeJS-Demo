@@ -4,3 +4,4 @@ coverage/
 .DS_Store
 logfile.log
 uncaughtExceptions.log
+.cfignore
