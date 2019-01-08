@@ -1,11 +1,11 @@
 applications:   
-- name: api-movierental-1.0.0       
-  memory: 512M    
-  disk_quota: 1024M    
-  instances: 1 
-  buildpack: NodeJS_v1-6-24 
-  health-check-type: http 
-  services:      
+- name: api-movierental-1.0.0
+  memory: 512M
+  disk_quota: 1024M
+  instances: 1
+  buildpack: NodeJS_v1-6-24
+  health-check-type: http
+  services:
   - mongodb      
   env:
     vidly_jwtPrivateKey: 1234
