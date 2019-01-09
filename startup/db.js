@@ -12,9 +12,10 @@ const config = require('config');
 // For Wise-PaaS to work
 module.exports = function () {
   vcap_services = JSON.parse(process.env.VCAP_SERVICES);
-  console.log(vcap_services);
+  // console.log(vcap_services);
   // console.log(VCAP_SERVICES);
-  const db = vcap_services['mongodb'][0].credentials.uri + '?replicaSet=rs0';
+  const replicaSetName = vcap_services['mongodb'][0].credentials.replicaSetName;
+  const db = vcap_services['mongodb'][0].credentials.uri + '?replicaSet=' + replicaSetName;
   // const mongo_database = vcap_services['mongodb-develop'][0].credentials.database;
   // const mongo_host1 = vcap_services['mongodb-develop'][0].credentials.host1;
   // const mongo_port1 = vcap_services['mongodb-develop'][0].credentials.port1;
