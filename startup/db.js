@@ -11,7 +11,7 @@ const config = require('config');
 
 // For Wise-PaaS to work
 module.exports = function () {
-  vcap_services = JSON.parse(process.env.VCAP_SERVICES);
+  const vcap_services = JSON.parse(process.env.VCAP_SERVICES);
   // console.log(vcap_services);
   // console.log(VCAP_SERVICES);
   const replicaSetName = vcap_services['mongodb'][0].credentials.replicaSetName;
