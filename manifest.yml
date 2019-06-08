@@ -7,3 +7,5 @@ applications:
   health-check-type: http 
   services:      
   - mongodb      
+  env:
+    vidly_jwtPrivateKey: 1234
