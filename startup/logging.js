@@ -9,7 +9,13 @@ module.exports = function () {
   // });
 
   // Better than process.on()
-  winston.handleExceptions(
+  // Deprecated: .handleExceptions() will be removed in winston@4. Use .exceptions.handle()
+  // winston.handleExceptions(
+  //   new winston.transports.Console({ colorize: true, prettyPrint: true }),
+  //   new winston.transports.File({ filename: 'uncaughtExceptions.log' })
+  // );
+
+  winston.exceptions.handle(
     new winston.transports.Console({ colorize: true, prettyPrint: true }),
     new winston.transports.File({ filename: 'uncaughtExceptions.log' })
   );
