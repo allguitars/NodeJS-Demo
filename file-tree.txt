@@ -1,0 +1,79 @@
+.
+├── README.md
+├── config
+│   ├── custom-environment-variables.json
+│   ├── default.json
+│   └── test.json
+├── file-tree.txt
+├── hash.js
+├── index.js
+├── log.json
+├── manifest.yml
+├── middleware
+│   ├── admin.js
+│   ├── async.js
+│   ├── auth.js
+│   ├── error.js
+│   ├── validate.js
+│   └── validateObjectId.js
+├── models
+│   ├── customer.js
+│   ├── genre.js
+│   ├── movie.js
+│   ├── rental.js
+│   └── user.js
+├── notes
+│   ├── HerokuDeployment.md
+│   ├── IntegrationTesting.md
+│   ├── TestDrivenDevelopment.md
+│   └── sc
+│       ├── 503.png
+│       ├── add-database-user.png
+│       ├── addon.png
+│       ├── coverage-all.png
+│       ├── coverage-middleware.png
+│       ├── coverage-models.png
+│       ├── coverage-routes.png
+│       ├── coverage-terminal.png
+│       ├── create-new.png
+│       ├── genres-highlight.png
+│       ├── header-token.png
+│       ├── mongodb-cloud.png
+│       ├── no-highlight.png
+│       ├── resources.png
+│       ├── sandbox-aws.png
+│       ├── sandbox-azure.png
+│       ├── view-logs.png
+│       └── x-auth-token.png
+├── objectid.js
+├── package-lock.json
+├── package.json
+├── routes
+│   ├── auth.js
+│   ├── customers.js
+│   ├── genres.js
+│   ├── home.js
+│   ├── movies.js
+│   ├── rentals.js
+│   ├── returns.js
+│   └── users.js
+├── startup
+│   ├── config.js
+│   ├── db.js
+│   ├── logging.js
+│   ├── prod.js
+│   ├── routes.js
+│   └── validation.js
+├── tests
+│   ├── integration
+│   │   ├── auth.test.js
+│   │   ├── genres.test.js
+│   │   └── returns.test.js
+│   └── unit
+│       ├── middleware
+│       │   └── auth.test.js
+│       └── models
+│           └── user.test.js
+└── uncaughtExceptions.log
+
+12 directories, 64 files
