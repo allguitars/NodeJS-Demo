@@ -27,24 +27,6 @@
 │   ├── IntegrationTesting.md
 │   ├── TestDrivenDevelopment.md
 │   └── sc
-│       ├── 503.png
-│       ├── add-database-user.png
-│       ├── addon.png
-│       ├── coverage-all.png
-│       ├── coverage-middleware.png
-│       ├── coverage-models.png
-│       ├── coverage-routes.png
-│       ├── coverage-terminal.png
-│       ├── create-new.png
-│       ├── genres-highlight.png
-│       ├── header-token.png
-│       ├── mongodb-cloud.png
-│       ├── no-highlight.png
-│       ├── resources.png
-│       ├── sandbox-aws.png
-│       ├── sandbox-azure.png
-│       ├── view-logs.png
-│       └── x-auth-token.png
 ├── objectid.js
 ├── package-lock.json
 ├── package.json
